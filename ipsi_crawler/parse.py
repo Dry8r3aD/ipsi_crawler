@@ -2,226 +2,154 @@
 #!/usr/bin/env python3
 
 import requests
+import logging
 import MySQLdb
-from bs4 import BeautifulSoup
+import logging.handlers
 import re
+from bs4 import BeautifulSoup
+
+
+###
+# Logging Information
+###
+logger = logging.getLogger('mylogger')
+logging.basicConfig(filename='./parse.log',level=logging.WARNING)
+fileMaxByte = 1024 * 1024 * 100 #100MB
+#fileHandler = logging.handlers.RotatingFileHandler(filename, \
+#		maxBytes=fileMaxByte, backupCount=10)
+
+fomatter = logging.Formatter('[%(levelname)s|%(filename)s:%(lineno)s] \
+			%(asctime)s > %(message)s')
+
+fileHandler = logging.FileHandler('./parse.log')
+streamHandler = logging.StreamHandler()
+
+fileHandler.setFormatter(fomatter)
+streamHandler.setFormatter(fomatter)
+
+logger.addHandler(fileHandler)
+logger.addHandler(streamHandler)
+
 
 ###
 # MySQL DB 접속 설정
 ###
-mysql_host = "localhost"
-mysql_userid = "ipsi"
-mysql_password = "ipsi12#"
-mysql_dbname = "ipsiDb"
+mysql_host = ""
+mysql_userid = ""
+mysql_password = ""
+mysql_dbname = ""
 
+
+###
+# 경쟁률 정보를 가져올 URL
+# HYU = 한양대학교
+# DGU = 동국대학교
+# SSU = 숭실대학교
+# AJU = 아주대학교
+###
+# Jinhak Apply (진학어플라이)
 HYU_url = "http://addon.jinhakapply.com/RatioV1/RatioH/Ratio11640051.html"
 DGU_url = "http://addon.jinhakapply.com/RatioV1/RatioH/Ratio10550041.html"
-SSU_url = "http://ratio.uwayapply.com/2018/susi2/ssu/1/"
 AJU_url = "http://addon.jinhakapply.com/RatioV1/RatioH/Ratio11040151.html"
 
+# U-way Apply (유웨이어플라이)
+SSU_url = "http://ratio.uwayapply.com/2018/susi2/ssu/1/"
 
-def hanyang_in_parse():
-    idx = 0
-    hanyang_in_info = {}
-    response = requests.get(HYU_url)
-    response.encoding = None
-    soup = BeautifulSoup(response.text, "html.parser")
-    spRes = soup.find("div", {"id": "SelType4L"})
-    #print ("HANYANG UNIV")
-    #print (spRes)
+###
+# @univ_name 	: 5글자 이내의 통상적인 대학교 이니셜
+# 			   	  - 정원 내/외가 별도인 경우, 끝에 IN/OUT postfix
+# Postfix		: JHA => JinHak Apply
+def competition_rate_parser_JHA(univ_name):
+	idx = 0
+	univ_comp_info = {}
+	type_name = ""
 
-    table = spRes.find('table', {'class': 'tableRatio3'})
-    #print(table)
+	if univ_name == "HYU-IN":
+		response = requests.get(HYU_url)
+		type_name = "SelType4L"
+	elif univ_name == "HYU-OUT":
+		response = requests.get(HYU_url)
+		type_name = "SelType4M"
+	elif univ_name == "DGU":
+		response = requests.get(DGU_url)
+		type_name = "SelType41AK"
+	elif univ_name == "AJU":
+		response = requests.get(AJU_url)
+		type_name = "SelType410"
+	else:
+		logger.warning("Not supported college/university", univ_name)
+		return
 
-    td = table.findAll('td')
-    #print(td)
+	logger.debug("univ_name :", univ_name, "type_name :", type_name)
 
-    for element in td:
-        text = element.renderContents()
-        wrap_text = text.strip()
-        #print(text)
-        decode_text = wrap_text.decode('utf-8')
-        #print(decode_text)
-        if idx == 0:
-            hanyang_in_info['College'] = decode_text
-        elif idx == 1:
-            hanyang_in_info['Recruitment unit'] = decode_text
-        elif idx == 2:
-            hanyang_in_info['Recruitment count'] = decode_text
-        elif idx == 3:
-            hanyang_in_info['Applied count'] = decode_text
-        elif idx == 4:
-            hanyang_in_info['Competition rate'] = decode_text
-        idx += 1
+	response.encoding = None
+	sp = BeautifulSoup(response.text, "html.parser")
+	searched_sp = sp.find("div",{"id":type_name})
+	logger.debug("searched_sp :", searched_sp)
 
-    #print(hanyang_in_info)
-    return hanyang_in_info
+	table = searched_sp.find("table", {"class":"tableRatio3"})
+	logger.debug("table :", table)
 
+	tds = table.findAll("td")
 
-def hanyang_out_parse():
-    idx = 0
-    hanyang_out_info = {}
-    response = requests.get(HYU_url)
-    response.encoding = None
-    soup = BeautifulSoup(response.text, "html.parser")
-    spRes = soup.find("div", {"id": "SelType4M"})
-    #print ("HANYANG UNIV")
-    #print (spRes)
-    table = spRes.find('table', {'class': 'tableRatio3'})
-    #print(table)
+	for element in tds:
+		raw_text = element.renderContents()
+		text = raw_text.strip()
+		logger.debug("text :", text)
 
-    td = table.findAll('td')
-    #print(td)
+		decoded_text = text.decode("utf-8")
+		logger.debug("decoded_text :", decoded_text)
 
-    for element in td:
-        text = element.renderContents()
-        wrap_text = text.strip()
-        #print(text)
-        decode_text = wrap_text.decode('utf-8')
-        #print(decode_text)
-        if idx == 0:
-            hanyang_out_info['College'] = decode_text
-        elif idx == 1:
-            hanyang_out_info['Recruitment unit'] = decode_text
-        elif idx == 2:
-            hanyang_out_info['Recruitment count'] = decode_text
-        elif idx == 3:
-            hanyang_out_info['Applied count'] = decode_text
-        elif idx == 4:
-            hanyang_out_info['Competition rate'] = decode_text
-        idx += 1
+		univ_comp_info[idx] = decoded_text
+		idx += 1
 
-    #print(hanyang_out_info)
-    return hanyang_out_info
-
-def dongguk_parse():
-    idx = 0
-    dongguk_info = {}
-    response = requests.get(DGU_url)
-    response.encoding = None
-    soup = BeautifulSoup(response.text, "html.parser")
-    spRes = soup.find("div", {"id": "SelType41AK"})
-    #print ("DONGGUK UNIV")
-    #print (spRes)
-    table = spRes.find('table', {'class': 'tableRatio3'})
-    #print(table)
-
-    td = table.findAll('td')
-    #print(td)
-
-    for element in td:
-        text = element.renderContents()
-        wrap_text = text.strip()
-        #print(text)
-        decode_text = wrap_text.decode('utf-8')
-        if idx >= 5:
-            break
-
-        #print(decode_text)
-
-        if idx == 0:
-            dongguk_info['College'] = decode_text
-        if idx == 1:
-            dongguk_info['Recruitment unit'] = decode_text
-        elif idx == 2:
-            dongguk_info['Recruitment count'] = decode_text
-        elif idx == 3:
-            dongguk_info['Applied count'] = decode_text
-        elif idx == 4:
-            dongguk_info['Competition rate'] = decode_text
-
-        idx += 1
-
-    #print(dongguk_info)
-    return dongguk_info
+	logger.debug(univ_comp_info)
+	return univ_comp_info
 
 
-def soongsil_parse():
-    idx = 0
-    soongsil_info = {}
-    response = requests.get(SSU_url)
-    response.encoding = None
-    soup = BeautifulSoup(response.text, "html.parser")
-    spRes = soup.find("div", {"id": "Div_0014"})
-    #print ("SSU UNIV")
-    #print (spRes)
-    table = spRes.find('tr', {'id': 'Tr_0014_001470000'})
-    #print(table)
+###
+# @univ_name 	: 5글자 이내의 통상적인 대학교 이니셜
+# 			   	  - 정원 내/외가 별도인 경우, 끝에 IN/OUT postfix
+# Postfix		: UWA => U-Way Apply
+def competition_rate_parser_UWA(univ_name):
+	idx = 0
+	univ_comp_info = {}
+	type_name = ""
 
-    td = table.findAll('td')
-    #print(td)
+	if univ_name == "SSU":
+		response = requests.get(SSU_url)
+		type_name_1 = "Div_0014"
+		type_name_2 = "Tr_0014_001470000"
+	else:
+		logger.warning("Not supported college/university", univ_name)
+		return
 
-    for element in td:
-        #print("1 %s", element)
-        text = element.renderContents()
-        #print(text)
-        wrap_text = text.strip()
-        #print(wrap_text)
-        decode_text = wrap_text.decode('utf-8')
-        #print(decode_text)
-        if idx >= 6:
-            break
+	logger.debug("univ_name :", univ_name, "type_name :", type_name)
 
-        #print(decode_text)
-        if idx == 0:
-            soongsil_info['Classification'] = decode_text
-        elif idx == 1:
-            soongsil_info['College'] = decode_text
-        elif idx == 2:
-            soongsil_info['Recruitment unit'] = decode_text
-        elif idx == 3:
-            soongsil_info['Recruitment count'] = decode_text
-        elif idx == 4:
-            soongsil_info['Applied count'] = decode_text
-        elif idx == 5:
-            decode_text = cleanhtml(decode_text)
-            #print(decode_text)
-            soongsil_info['Competition rate'] = decode_text
+	response.encoding = None
+	sp = BeautifulSoup(response.text, "html.parser")
+	searched_sp = sp.find("div", {"id":type_name_1})
+	logger.debug("searched_sp :", searched_sp)
 
-        idx += 1
+	tr = searched_sp.find("tr", {"id":type_name_2})
+	logger.debug("tr :", tr)
 
-    #print(dongguk_info)
-    return soongsil_info
+	tds = tr.findAll("td")
 
+	for element in tds:
+		raw_text = element.renderContents()
+		text = raw_text.strip()
+		logger.debug("text :", text)
 
-def ajou_parse():
-    idx = 0
-    ajou_info = {}
-    response = requests.get(AJU_url)
-    response.encoding = None
-    soup = BeautifulSoup(response.text, "html.parser")
-    spRes = soup.find("div", {"id": "SelType410"})
-    #print (spRes)
+		decoded_text = text.decode("utf-8")
+		decoded_text = cleanhtml(decoded_text)
+		logger.debug("decoded_text :", decoded_text)
 
-    table = spRes.find('table', {'class': 'tableRatio3'})
-    print(table)
+		univ_comp_info[idx] = decoded_text
+		idx += 1
 
-    td = table.findAll('td')
-    #print(td)
-
-    for element in td:
-        text = element.renderContents()
-        wrap_text = text.strip()
-        #print(text)
-        decode_text = wrap_text.decode('utf-8')
-        #print(decode_text)
-
-        if idx >= 4:
-            break
-
-        if idx == 0:
-            ajou_info['Recruitment unit'] = decode_text
-        elif idx == 1:
-            ajou_info['Recruitment count'] = decode_text
-        elif idx == 2:
-            ajou_info['Applied count'] = decode_text
-        elif idx == 3:
-            ajou_info['Competition rate'] = decode_text
-
-        idx += 1
-
-    #print(ajou_info)
-    return ajou_info
+	logger.debug(univ_comp_info)
+	return univ_comp_info
 
 
 def cleanhtml(raw_html):
@@ -231,38 +159,29 @@ def cleanhtml(raw_html):
 
 
 def insert_info_to_db(db, info, univ_name):
-    #print(univ_name)
-    #print(info['College'])
-    #print(info['Recruitment unit'])
-    #print(info['Recruitment count'])
-    #print(info['Applied count'])
-    #print(info['Competition rate'])
-    if univ_name == "HYU_in":
+    if univ_name == "HYU-IN":
         sql_query = "INSERT INTO `hanyang_in_ratio` (`College`, `unit`, `count`, `apply_count`, `ratio`) \
-		VALUES ('{}', '{}', {}, {}, '{}')".format(info['College'], info['Recruitment unit'], \
-		info['Recruitment count'], info['Applied count'], info['Competition rate'])
-    elif univ_name == "HYU_out":
+		VALUES ('{}', '{}', {}, {}, '{}')".format(info[0], info[1], info[2], info[3], info[4], info[5])
+    elif univ_name == "HYU-OUT":
         sql_query = "INSERT INTO `hanyang_out_ratio` (`College`, `unit`, `count`, `apply_count`, `ratio`) \
-		VALUES ('{}', '{}', {}, {}, '{}')".format(info['College'], info['Recruitment unit'], \
-		info['Recruitment count'], info['Applied count'], info['Competition rate'])
+		VALUES ('{}', '{}', {}, {}, '{}')".format(info[0], info[1], info[2], info[3], info[4], info[5])
     elif univ_name == "DGU":
         sql_query = "INSERT INTO `dongguk_ratio` (`College`, `unit`, `count`, `apply_count`, `ratio`) \
-		VALUES ('{}', '{}', {}, {}, '{}')".format(info['College'], info['Recruitment unit'], \
-		info['Recruitment count'], info['Applied count'], info['Competition rate'])
+		VALUES ('{}', '{}', {}, {}, '{}')".format(info[0], info[1], info[2], info[3], info[4], info[5])
     elif univ_name == "SSU":
         sql_query = "INSERT INTO `soongsil_ratio` (`Classification`, `College`, `unit`, `count`, `apply_count`, `ratio`) \
-                    VALUES ( '{}', '{}', '{}', {}, {}, '{}')".format(info['Classification'], info['College'], info['Recruitment unit'], \
-		    info['Recruitment count'], info['Applied count'], info['Competition rate'])
+                    VALUES ( '{}', '{}', '{}', {}, {}, '{}')".format(info[0], info[1], info[2], info[3], info[4], info[5])
     elif univ_name == "AJU":
         sql_query = "INSERT INTO `ajou_ratio` (`unit`, `count`, `apply_count`, `ratio`) \
-		VALUES ('{}', {}, {}, '{}')".format(info['Recruitment unit'], \
-		info['Recruitment count'], info['Applied count'], info['Competition rate'])
+		VALUES ('{}', {}, {}, '{}')".format(info[0], info[1], info[2], info[3])
 
-    cursor = db.cursor()
-    set_database_for_utf8(cursor)
-    #print(sql_query)
-    cursor.execute(sql_query)
-    db.commit()
+
+	logger.debug("SQL Query : ", sql_query)
+
+	cursor = db.cursor()
+	set_database_for_utf8(cursor)
+	cursor.execute(sql_query)
+	db.commit()
 
 
 def set_database_for_utf8(cursor):
@@ -284,26 +203,24 @@ def disconnect_mysql_database(db):
 
 
 def main():
-    hy_in = hanyang_in_parse()
-    #print(hy_in)
-    hy_out = hanyang_out_parse()
-    #print(hy_out)
-    dg = dongguk_parse()
-    #print(dg)
-    ssu = soongsil_parse()
-    #print(ssu)
-    aju = ajou_parse()
-    #print(aju)
+	hyu_in = competition_rate_parser_JHA("HYU-IN")
+	hyu_out = competition_rate_parser_JHA("HYU-OUT")
+	dgu = competition_rate_parser_JHA("DGU")
+	aju = competition_rate_parser_JHA("AJU")
 
-    db = connect_mysql_database()
+	ssu = competition_rate_parser_UWA("SSU")
 
-    insert_info_to_db(db, hy_in, "HYU_in")
-    insert_info_to_db(db, hy_out, "HYU_out")
-    insert_info_to_db(db, dg, "DGU")
-    insert_info_to_db(db, ssu, "SSU")
-    insert_info_to_db(db, aju, "AJU")
+	#db = connect_mysql_database()
+	#db = "hello"
 
-    disconnect_mysql_database(db)
+	insert_info_to_db(db, hyu_in, "HYU-IN")
+	insert_info_to_db(db, hyu_out, "HYU-OUT")
+	insert_info_to_db(db, dgu, "DGU")
+	insert_info_to_db(db, aju, "AJU")
+
+	insert_info_to_db(db, ssu, "SSU")
+
+	#disconnect_mysql_database(db)
 
 
 if __name__ == '__main__':
