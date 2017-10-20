@@ -210,8 +210,7 @@ def main():
 
 	ssu = competition_rate_parser_UWA("SSU")
 
-	#db = connect_mysql_database()
-	#db = "hello"
+	db = connect_mysql_database()
 
 	insert_info_to_db(db, hyu_in, "HYU-IN")
 	insert_info_to_db(db, hyu_out, "HYU-OUT")
@@ -220,7 +219,7 @@ def main():
 
 	insert_info_to_db(db, ssu, "SSU")
 
-	#disconnect_mysql_database(db)
+	disconnect_mysql_database(db)
 
 
 if __name__ == '__main__':
